@@ -15,10 +15,9 @@ services:
       - GENERIC_TIMEZONE=UTC
       - N8N_LOG_LEVEL=info
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - SLACK_TOKEN=${SLACK_TOKEN}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
       - AWS_API_KEY=${AWS_API_KEY}
       - LAMBDA_API_GATEWAY_URL=${LAMBDA_API_GATEWAY_URL}
-      - SLACK_CHANNEL=${SLACK_CHANNEL:-#devops-alerts}
     volumes:
       - n8n_data:/home/node/.n8n
     networks:
