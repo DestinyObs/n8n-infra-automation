@@ -3,6 +3,8 @@
 .env.local
 .env.*.local
 
+n8n-workflow-fixed.json
+
 # n8n data
 n8n_data/
 .n8n/

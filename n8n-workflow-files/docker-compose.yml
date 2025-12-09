@@ -63,13 +63,14 @@ services:
     networks:
       - monitoring
 
-  # Node Exporter - System Metrics
+  # Node Exporter - System Metrics (Monitors HOST machine)
   node-exporter:
     image: prom/node-exporter:latest
     container_name: node-exporter
     restart: unless-stopped
     ports:
       - "9100:9100"
+    pid: host  # Access host process namespace
     command:
       - '--path.procfs=/host/proc'
       - '--path.rootfs=/rootfs'
