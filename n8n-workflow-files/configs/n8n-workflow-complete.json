@@ -1,5 +1,5 @@
 {
-  "name": "AI-Driven Incident Detection with Slack",
+  "name": "AI-Driven Incident Detection with Slack Webhook",
   "nodes": [
     {
       "parameters": {
@@ -106,60 +106,75 @@
     },
     {
       "parameters": {
-        "resource": "message",
-        "channel": "={{ $env.SLACK_CHANNEL || '#devops-alerts' }}",
-        "text": "=🚨 *CRITICAL ALERT: Auto-Scaling Triggered*\\n\\n*Alert:* {{ $json.alertname }}\\n*Instance:* {{ $json.instance }}\\n*Type:* {{ $json.type }}\\n*Severity:* {{ $json.severity }}\\n*Metric Value:* {{ $json.metric_value }}\\n\\n*🤖 AI Analysis:*\\n• Spike Type: {{ $json.ai_analysis.spike_type }}\\n• Trend: {{ $json.ai_analysis.trend_prediction }}\\n• Scaling Needed: {{ $json.ai_analysis.scaling_needed }}\\n• Confidence: {{ $json.ai_analysis.confidence_level }}\\n\\n*💡 Reasoning:* {{ $json.ai_analysis.reasoning }}\\n\\n*⏱ Duration:* {{ $json.ai_analysis.estimated_duration }}\\n\\n*🚀 Action:* Auto-scaling infrastructure now\\n\\n<{{ $json.generatorURL }}|View in Prometheus>",
-        "otherOptions": {}
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"🚨 *CRITICAL ALERT: Auto-Scaling Triggered*\",\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": {\n        \"type\": \"plain_text\",\n        \"text\": \"🚨 CRITICAL ALERT: Auto-Scaling Triggered\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Alert:*\\n{{ $json.alertname }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Instance:*\\n{{ $json.instance }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Type:*\\n{{ $json.type }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Severity:*\\n{{ $json.severity }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Metric Value:*\\n{{ $json.metric_value }}\"\n        }\n      ]\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*🤖 AI Analysis*\\n• Spike Type: {{ $json.ai_analysis.spike_type }}\\n• Trend: {{ $json.ai_analysis.trend_prediction }}\\n• Scaling Needed: {{ $json.ai_analysis.scaling_needed }}\\n• Confidence: {{ $json.ai_analysis.confidence_level }}\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*💡 Reasoning:* {{ $json.ai_analysis.reasoning }}\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*⏱ Duration:* {{ $json.ai_analysis.estimated_duration }}\\n*🚀 Action:* Auto-scaling infrastructure now\"\n      }\n    },\n    {\n      \"type\": \"actions\",\n      \"elements\": [\n        {\n          \"type\": \"button\",\n          \"text\": {\n            \"type\": \"plain_text\",\n            \"text\": \"View in Prometheus\"\n          },\n          \"url\": \"{{ $json.generatorURL }}\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
       },
       "id": "slack-critical",
       "name": "Slack: Critical Alert",
-      "type": "n8n-nodes-base.slack",
-      "typeVersion": 2.1,
-      "position": [1440, 200],
-      "credentials": {
-        "slackApi": {
-          "id": "slack-credential",
-          "name": "Slack account"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1440, 200]
     },
     {
       "parameters": {
-        "resource": "message",
-        "channel": "={{ $env.SLACK_CHANNEL || '#devops-alerts' }}",
-        "text": "=ℹ️ *Alert Notification*\\n\\n*Alert:* {{ $json.alertname }}\\n*Instance:* {{ $json.instance }}\\n*Type:* {{ $json.type }}\\n*Metric Value:* {{ $json.metric_value }}\\n\\n*🤖 AI Analysis:*\\n• Spike Type: {{ $json.ai_analysis.spike_type }}\\n• Trend: {{ $json.ai_analysis.trend_prediction }}\\n• Action: {{ $json.ai_analysis.recommended_action }}\\n\\n*💡 Reasoning:* {{ $json.ai_analysis.reasoning }}\\n\\nℹ️ This appears to be a {{ $json.ai_analysis.spike_type }} spike. No scaling action needed at this time. Monitoring will continue.\\n\\n<{{ $json.generatorURL }}|View in Prometheus>",
-        "otherOptions": {}
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"ℹ️ Alert Notification\",\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": {\n        \"type\": \"plain_text\",\n        \"text\": \"ℹ️ Alert Notification\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Alert:*\\n{{ $json.alertname }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Instance:*\\n{{ $json.instance }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Type:*\\n{{ $json.type }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Metric:*\\n{{ $json.metric_value }}\"\n        }\n      ]\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*🤖 AI Analysis*\\n• Spike Type: {{ $json.ai_analysis.spike_type }}\\n• Trend: {{ $json.ai_analysis.trend_prediction }}\\n• Action: {{ $json.ai_analysis.recommended_action }}\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*💡 Reasoning:* {{ $json.ai_analysis.reasoning }}\\n\\nℹ️ This appears to be a {{ $json.ai_analysis.spike_type }} spike. No scaling action needed at this time.\"\n      }\n    },\n    {\n      \"type\": \"actions\",\n      \"elements\": [\n        {\n          \"type\": \"button\",\n          \"text\": {\n            \"type\": \"plain_text\",\n            \"text\": \"View in Prometheus\"\n          },\n          \"url\": \"{{ $json.generatorURL }}\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
       },
       "id": "slack-info",
       "name": "Slack: Info Alert",
-      "type": "n8n-nodes-base.slack",
-      "typeVersion": 2.1,
-      "position": [1440, 400],
-      "credentials": {
-        "slackApi": {
-          "id": "slack-credential",
-          "name": "Slack account"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1440, 400]
     },
     {
       "parameters": {
-        "resource": "message",
-        "channel": "={{ $env.SLACK_CHANNEL || '#devops-alerts' }}",
-        "text": "=⚠️ *Manual Review Required*\\n\\n*Alert:* {{ $json.alertname }}\\n*Instance:* {{ $json.instance }}\\n*Type:* {{ $json.type }}\\n*Metric Value:* {{ $json.metric_value }}\\n\\n*🤖 AI Analysis:*\\n• Confidence: {{ $json.ai_analysis.confidence_level }}\\n• Recommendation: Manual review\\n\\n*💡 Reasoning:* {{ $json.ai_analysis.reasoning }}\\n\\n*👤 Action Required:* Please review this alert and determine if scaling is needed.\\n\\n<{{ $json.generatorURL }}|View in Prometheus>",
-        "otherOptions": {}
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"⚠️ Manual Review Required\",\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": {\n        \"type\": \"plain_text\",\n        \"text\": \"⚠️ Manual Review Required\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Alert:*\\n{{ $json.alertname }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Instance:*\\n{{ $json.instance }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Type:*\\n{{ $json.type }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Metric:*\\n{{ $json.metric_value }}\"\n        }\n      ]\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*🤖 AI Analysis*\\n• Confidence: {{ $json.ai_analysis.confidence_level }}\\n• Recommendation: Manual review\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*💡 Reasoning:* {{ $json.ai_analysis.reasoning }}\\n\\n*👤 Action Required:* Please review this alert and determine if scaling is needed.\"\n      }\n    },\n    {\n      \"type\": \"actions\",\n      \"elements\": [\n        {\n          \"type\": \"button\",\n          \"text\": {\n            \"type\": \"plain_text\",\n            \"text\": \"View in Prometheus\"\n          },\n          \"url\": \"{{ $json.generatorURL }}\",\n          \"style\": \"danger\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
       },
       "id": "slack-manual",
       "name": "Slack: Manual Review",
-      "type": "n8n-nodes-base.slack",
-      "typeVersion": 2.1,
-      "position": [1440, 300],
-      "credentials": {
-        "slackApi": {
-          "id": "slack-credential",
-          "name": "Slack account"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1440, 300]
     },
     {
       "parameters": {
@@ -194,22 +209,27 @@
     },
     {
       "parameters": {
-        "resource": "message",
-        "channel": "={{ $env.SLACK_CHANNEL || '#devops-alerts' }}",
-        "text": "=✅ *Auto-Scaling Completed*\\n\\n*Alert:* {{ $json.alertname }}\\n*Instance:* {{ $json.instance }}\\n\\n*📊 Scaling Result:*\\n```{{ JSON.stringify($('Trigger Scaling (Optional)').item.json, null, 2) }}```\\n\\n*Next Steps:*\\n• Monitor new instances coming online\\n• Verify system stability\\n• Check if additional scaling needed",
-        "otherOptions": {}
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"✅ Auto-Scaling Completed\",\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": {\n        \"type\": \"plain_text\",\n        \"text\": \"✅ Auto-Scaling Completed\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Alert:*\\n{{ $json.alertname }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Instance:*\\n{{ $json.instance }}\"\n        }\n      ]\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*📊 Scaling Result:*\\n```{{ JSON.stringify($('Trigger Scaling (Optional)').item.json, null, 2) }}```\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Next Steps:*\\n• Monitor new instances coming online\\n• Verify system stability\\n• Check if additional scaling needed\"\n      }\n    }\n  ]\n}",
+        "options": {}
       },
       "id": "slack-success",
       "name": "Slack: Scaling Success",
-      "type": "n8n-nodes-base.slack",
-      "typeVersion": 2.1,
-      "position": [1840, 200],
-      "credentials": {
-        "slackApi": {
-          "id": "slack-credential",
-          "name": "Slack account"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1840, 200]
     },
     {
       "parameters": {
