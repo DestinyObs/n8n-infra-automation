@@ -1,55 +1,15 @@
 global:
   resolve_timeout: 5m
 
-# Route configuration
 route:
   receiver: 'n8n-webhook'
-  group_by: ['alertname', 'instance', 'type']
-  group_wait: 10s
+  group_by: ['alertname']
+  group_wait: 5s
   group_interval: 10s
-  repeat_interval: 1h
-  
-  routes:
-    # Critical alerts
-    - match:
-        severity: critical
-      receiver: 'n8n-webhook'
-      group_wait: 5s
-      repeat_interval: 30m
-    
-    # CPU alerts
-    - match:
-        type: cpu
-      receiver: 'n8n-webhook'
-      group_wait: 10s
-    
-    # 5xx error alerts
-    - match:
-        type: 5xx_errors
-      receiver: 'n8n-webhook'
-      group_wait: 5s
-    
-    # Memory alerts
-    - match:
-        type: memory
-      receiver: 'n8n-webhook'
-      group_wait: 10s
+  repeat_interval: 5m
 
-# Inhibition rules
-inhibit_rules:
-  - source_match:
-      severity: 'critical'
-    target_match:
-      severity: 'warning'
-    equal: ['instance']
-
-# Receivers configuration
 receivers:
-  # Send to n8n webhook
   - name: 'n8n-webhook'
     webhook_configs:
-      - url: 'http://n8n:5678/webhook/prometheus-alert'
+      - url: 'http://n8n:5678/webhook/alert'
         send_resolved: true
-        http_config:
-          follow_redirects: true
-        max_alerts: 10

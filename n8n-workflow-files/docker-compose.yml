@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   # n8n - Workflow Automation
   n8n:
@@ -9,24 +11,18 @@ services:
     environment:
       - N8N_BASIC_AUTH_ACTIVE=true
       - N8N_BASIC_AUTH_USER=admin
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-admin123}
-      - WEBHOOK_URL=http://${SERVER_IP:-13.60.207.36}:5678/
+      - N8N_BASIC_AUTH_PASSWORD=admin123
+      - WEBHOOK_URL=http://13.60.207.36:5678/
       - N8N_SECURE_COOKIE=false
       - GENERIC_TIMEZONE=UTC
-      - N8N_LOG_LEVEL=info
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
-      - AWS_API_KEY=${AWS_API_KEY}
-      - LAMBDA_API_GATEWAY_URL=${LAMBDA_API_GATEWAY_URL}
     volumes:
       - n8n_data:/home/node/.n8n
     networks:
       - monitoring
-    depends_on:
-      - prometheus
-      - alertmanager
 
-  # Prometheus - Monitoring & Metrics
+  # Prometheus - Monitoring
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -36,13 +32,10 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=7d'
       - '--web.enable-lifecycle'
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./alert_rules.yml:/etc/prometheus/alert_rules.yml
       - prometheus_data:/prometheus
     networks:
       - monitoring
@@ -58,19 +51,19 @@ services:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--storage.path=/alertmanager'
     volumes:
-      - ./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml
       - alertmanager_data:/alertmanager
     networks:
       - monitoring
 
-  # Node Exporter - System Metrics (Monitors HOST machine)
+  # Node Exporter - System Metrics
   node-exporter:
     image: prom/node-exporter:latest
     container_name: node-exporter
     restart: unless-stopped
     ports:
       - "9100:9100"
-    pid: host  # Access host process namespace
+    pid: host
     command:
       - '--path.procfs=/host/proc'
       - '--path.rootfs=/rootfs'
@@ -85,11 +78,8 @@ services:
 
 volumes:
   n8n_data:
-    driver: local
   prometheus_data:
-    driver: local
   alertmanager_data:
-    driver: local
 
 networks:
   monitoring:
