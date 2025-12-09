@@ -1,0 +1,356 @@
+{
+  "name": "AI-Driven Incident Detection & Auto-Scaling",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "prometheus-alert",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Prometheus Alert Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "webhookId": "prometheus-alert"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse incoming alert data\nconst alerts = $input.item.json.alerts || [];\nconst parsedAlerts = [];\n\nfor (const alert of alerts) {\n  if (alert.status === 'firing') {\n    const parsed = {\n      alertname: alert.labels.alertname,\n      instance: alert.labels.instance,\n      severity: alert.labels.severity,\n      type: alert.labels.type,\n      summary: alert.annotations.summary,\n      description: alert.annotations.description,\n      metric_value: alert.annotations.metric_value,\n      startsAt: alert.startsAt,\n      generatorURL: alert.generatorURL,\n      timestamp: new Date().toISOString()\n    };\n    parsedAlerts.push(parsed);\n  }\n}\n\nif (parsedAlerts.length === 0) {\n  return {\n    json: {\n      no_action: true,\n      message: \"All alerts resolved, no action needed\"\n    }\n  };\n}\n\nconst alert = parsedAlerts[0];\n\nreturn {\n  json: {\n    alert_data: alert,\n    ai_prompt: `You are a DevOps AI assistant analyzing infrastructure incidents.\n\nIncident Details:\n- Alert: ${alert.alertname}\n- Type: ${alert.type}\n- Instance: ${alert.instance}\n- Severity: ${alert.severity}\n- Current Value: ${alert.metric_value}\n- Description: ${alert.description}\n- Time: ${alert.timestamp}\n\nAnalyze this incident and determine:\n1. Is this spike temporary (short-lived) or consistent (sustained trend)?\n2. Will the load/traffic likely continue rising or stabilize?\n3. Should we scale up infrastructure immediately?\n4. What is the recommended action?\n\nRespond ONLY with a JSON object (no markdown, no explanation):\n{\n  \"spike_type\": \"temporary\" or \"consistent\",\n  \"trend_prediction\": \"increasing\" or \"stable\" or \"decreasing\",\n  \"scaling_needed\": true or false,\n  \"confidence_level\": \"high\" or \"medium\" or \"low\",\n  \"recommended_action\": \"auto_scale\" or \"manual_review\" or \"no_action\",\n  \"reasoning\": \"Brief 1-2 sentence explanation\",\n  \"estimated_duration\": \"Expected duration if temporary, or 'ongoing' if consistent\"\n}`\n  }\n};"
+      },
+      "id": "parse-node",
+      "name": "Parse Alert Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [440, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.no_action }}",
+              "operation": "equals",
+              "value2": "true"
+            }
+          ]
+        }
+      },
+      "id": "check-action",
+      "name": "Check If Action Needed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [640, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1000,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.ai_prompt) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "ai-analysis",
+      "name": "AI Analysis (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse AI response and combine with alert data\nconst aiResponse = $input.item.json;\nconst alertData = $('Parse Alert Data').item.json.alert_data;\n\nlet analysis;\ntry {\n  const contentBlock = aiResponse.content.find(block => block.type === 'text');\n  const responseText = contentBlock.text;\n  \n  // Try to extract JSON from response\n  const jsonMatch = responseText.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    analysis = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found in AI response');\n  }\n} catch (error) {\n  console.error('Failed to parse AI response:', error);\n  // Fallback to conservative approach\n  analysis = {\n    spike_type: 'unknown',\n    trend_prediction: 'unknown',\n    scaling_needed: true,\n    confidence_level: 'low',\n    recommended_action: 'manual_review',\n    reasoning: 'Failed to parse AI response, defaulting to manual review for safety',\n    estimated_duration: 'unknown'\n  };\n}\n\nreturn {\n  json: {\n    ...alertData,\n    ai_analysis: analysis,\n    requires_scaling: analysis.recommended_action === 'auto_scale',\n    requires_manual_review: analysis.recommended_action === 'manual_review',\n    no_action_needed: analysis.recommended_action === 'no_action'\n  }\n};"
+      },
+      "id": "parse-ai",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.ai_analysis.recommended_action }}",
+              "operation": "equals",
+              "value2": "auto_scale"
+            }
+          ]
+        }
+      },
+      "id": "decision-switch",
+      "name": "Decision: Auto-Scale?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [1240, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "channel": "={{ $env.SLACK_CHANNEL || '#devops-alerts' }}",
+        "text": "=🚨 **CRITICAL ALERT: Auto-Scaling Triggered**\\n\\n**Alert:** {{ $json.alertname }}\\n**Instance:** {{ $json.instance }}\\n**Type:** {{ $json.type }}\\n**Severity:** {{ $json.severity }}\\n**Metric Value:** {{ $json.metric_value }}\\n\\n**🤖 AI Analysis:**\\n• Spike Type: {{ $json.ai_analysis.spike_type }}\\n• Trend: {{ $json.ai_analysis.trend_prediction }}\\n• Scaling Needed: {{ $json.ai_analysis.scaling_needed }}\\n• Confidence: {{ $json.ai_analysis.confidence_level }}\\n\\n**💡 Reasoning:** {{ $json.ai_analysis.reasoning }}\\n\\n**⏱ Duration:** {{ $json.ai_analysis.estimated_duration }}\\n\\n**🚀 Action:** Auto-scaling infrastructure now\\n\\n<{{ $json.generatorURL }}|View in Prometheus>",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "slack-critical",
+      "name": "Slack: Critical Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [1440, 200],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-credential",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "channel": "={{ $env.SLACK_CHANNEL || '#devops-alerts' }}",
+        "text": "=ℹ️ **Alert Notification**\\n\\n**Alert:** {{ $json.alertname }}\\n**Instance:** {{ $json.instance }}\\n**Type:** {{ $json.type }}\\n**Metric Value:** {{ $json.metric_value }}\\n\\n**🤖 AI Analysis:**\\n• Spike Type: {{ $json.ai_analysis.spike_type }}\\n• Trend: {{ $json.ai_analysis.trend_prediction }}\\n• Action: {{ $json.ai_analysis.recommended_action }}\\n\\n**💡 Reasoning:** {{ $json.ai_analysis.reasoning }}\\n\\nℹ️ This appears to be a {{ $json.ai_analysis.spike_type }} spike. No scaling action needed at this time. Monitoring will continue.\\n\\n<{{ $json.generatorURL }}|View in Prometheus>",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "slack-info",
+      "name": "Slack: Info Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [1440, 400],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-credential",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.LAMBDA_API_GATEWAY_URL }}/auto-scale",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.AWS_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"alert_type\": \"{{ $json.type }}\",\n  \"instance\": \"{{ $json.instance }}\",\n  \"metric_value\": \"{{ $json.metric_value }}\",\n  \"ai_confidence\": \"{{ $json.ai_analysis.confidence_level }}\",\n  \"action\": \"scale_up\",\n  \"severity\": \"{{ $json.severity }}\",\n  \"alertname\": \"{{ $json.alertname }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "trigger-lambda",
+      "name": "Trigger AWS Lambda Auto-Scale",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1640, 200]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "channel": "={{ $env.SLACK_CHANNEL || '#devops-alerts' }}",
+        "text": "=✅ **Auto-Scaling Completed**\\n\\n**Alert:** {{ $json.alertname }}\\n**Instance:** {{ $json.instance }}\\n\\n**📊 Scaling Result:**\\n{{ $('Trigger AWS Lambda Auto-Scale').item.json }}\\n\\n**Next Steps:**\\n• Monitor new instances coming online\\n• Verify system stability\\n• Check if additional scaling needed\\n\\n<{{ $json.generatorURL }}|View in Prometheus>",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "slack-success",
+      "name": "Slack: Scaling Success",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [1840, 200],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-credential",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "channel": "={{ $env.SLACK_CHANNEL || '#devops-alerts' }}",
+        "text": "=⚠️ **Manual Review Required**\\n\\n**Alert:** {{ $json.alertname }}\\n**Instance:** {{ $json.instance }}\\n**Type:** {{ $json.type }}\\n**Metric Value:** {{ $json.metric_value }}\\n\\n**🤖 AI Analysis:**\\n• Confidence: {{ $json.ai_analysis.confidence_level }}\\n• Recommendation: Manual review\\n\\n**💡 Reasoning:** {{ $json.ai_analysis.reasoning }}\\n\\n**👤 Action Required:** Please review this alert and determine if scaling is needed.\\n\\n<{{ $json.generatorURL }}|View in Prometheus>",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "slack-manual",
+      "name": "Slack: Manual Review",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [1440, 300],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-credential",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [840, 500]
+    }
+  ],
+  "connections": {
+    "Prometheus Alert Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Alert Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Alert Data": {
+      "main": [
+        [
+          {
+            "node": "Check If Action Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Action Needed": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Analysis (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Analysis (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Decision: Auto-Scale?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision: Auto-Scale?": {
+      "main": [
+        [
+          {
+            "node": "Slack: Critical Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack: Info Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack: Manual Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack: Critical Alert": {
+      "main": [
+        [
+          {
+            "node": "Trigger AWS Lambda Auto-Scale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger AWS Lambda Auto-Scale": {
+      "main": [
+        [
+          {
+            "node": "Slack: Scaling Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "DevOps",
+      "id": "devops-tag"
+    },
+    {
+      "name": "Auto-Scaling",
+      "id": "autoscaling-tag"
+    },
+    {
+      "name": "AI",
+      "id": "ai-tag"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-09T10:00:00.000Z",
+  "versionId": "1"
+}

@@ -1,0 +1,120 @@
+global:
+  resolve_timeout: 5m
+  # Slack API URL (optional, if not using Slack node in n8n)
+  # slack_api_url: 'https://slack.com/api/chat.postMessage'
+
+# Template files for custom notifications
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Route configuration
+route:
+  # Default receiver
+  receiver: 'n8n-webhook'
+  
+  # Group alerts by these labels
+  group_by: ['alertname', 'instance', 'type']
+  
+  # Wait before sending first notification
+  group_wait: 10s
+  
+  # Wait before sending notification about new alerts in group
+  group_interval: 10s
+  
+  # Wait before sending notification again if nothing changed
+  repeat_interval: 1h
+  
+  # Child routes (for specific handling)
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'n8n-webhook-critical'
+      group_wait: 5s
+      repeat_interval: 30m
+      continue: true  # Also send to default receiver
+    
+    # CPU alerts
+    - match:
+        type: cpu
+      receiver: 'n8n-webhook'
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 1h
+    
+    # 5xx error alerts
+    - match:
+        type: 5xx_errors
+      receiver: 'n8n-webhook'
+      group_wait: 5s
+      group_interval: 5s
+      repeat_interval: 30m
+    
+    # Memory alerts
+    - match:
+        type: memory
+      receiver: 'n8n-webhook'
+      group_wait: 10s
+      repeat_interval: 1h
+    
+    # Disk alerts (less urgent)
+    - match:
+        type: disk
+      receiver: 'n8n-webhook'
+      group_wait: 5m
+      repeat_interval: 4h
+
+# Inhibition rules (prevent duplicate notifications)
+inhibit_rules:
+  # Don't alert on instance down if already alerting on critical CPU
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['instance']
+  
+  # If instance is down, don't alert on other metrics for that instance
+  - source_match:
+      alertname: 'InstanceDown'
+    target_match_re:
+      alertname: '.*'
+    equal: ['instance']
+
+# Receivers configuration
+receivers:
+  # Default webhook to n8n
+  - name: 'n8n-webhook'
+    webhook_configs:
+      - url: 'http://n8n:5678/webhook/prometheus-alert'
+        send_resolved: true
+        http_config:
+          follow_redirects: true
+        max_alerts: 10
+
+  # Critical alerts webhook
+  - name: 'n8n-webhook-critical'
+    webhook_configs:
+      - url: 'http://n8n:5678/webhook/prometheus-alert-critical'
+        send_resolved: true
+        http_config:
+          follow_redirects: true
+
+  # Backup receiver (email)
+  - name: 'email-notifications'
+    email_configs:
+      - to: 'devops-team@example.com'
+        from: 'alertmanager@example.com'
+        smarthost: 'smtp.gmail.com:587'
+        auth_username: 'alertmanager@example.com'
+        auth_password: 'app_password_here'
+        headers:
+          Subject: '{{ .GroupLabels.alertname }} - {{ .Status | toUpper }}'
+
+  # Slack backup (if not using n8n)
+  - name: 'slack-notifications'
+    slack_configs:
+      - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+        channel: '#devops-alerts'
+        title: '{{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
