@@ -1,92 +1,97 @@
+version: '3.8'
+
 services:
+  # n8n - Workflow Automation
   n8n:
     image: n8nio/n8n:latest
     container_name: n8n
-    restart: always
+    restart: unless-stopped
     ports:
       - "5678:5678"
     environment:
-      # Basic Authentication
       - N8N_BASIC_AUTH_ACTIVE=true
       - N8N_BASIC_AUTH_USER=admin
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-changeme}
-      
-      # Webhook Configuration
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-admin123}
       - WEBHOOK_URL=http://${SERVER_IP:-localhost}:5678/
-      
-      # Timezone
       - GENERIC_TIMEZONE=UTC
-      
-      # Logging
       - N8N_LOG_LEVEL=info
-      - N8N_LOG_OUTPUT=console
-      
-      # Execution
-      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
-      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
-      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
-      
-      # Security
-      - N8N_SECURE_COOKIE=false  # Set to true if using HTTPS
-      
-      # API Keys (use environment variables)
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SLACK_TOKEN=${SLACK_TOKEN}
       - AWS_API_KEY=${AWS_API_KEY}
-      
+      - LAMBDA_API_GATEWAY_URL=${LAMBDA_API_GATEWAY_URL}
+      - SLACK_CHANNEL=${SLACK_CHANNEL:-#devops-alerts}
     volumes:
       - n8n_data:/home/node/.n8n
-      - ./backups:/backups
     networks:
-      - n8n-network
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      - monitoring
+    depends_on:
+      - prometheus
+      - alertmanager
 
-  # Optional: PostgreSQL for production use
-  postgres:
-    image: postgres:15-alpine
-    container_name: n8n-postgres
-    restart: always
-    environment:
-      - POSTGRES_DB=n8n
-      - POSTGRES_USER=n8n
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-n8n_password}
+  # Prometheus - Monitoring & Metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml
+      - prometheus_data:/prometheus
     networks:
-      - n8n-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U n8n"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - monitoring
 
-  # Optional: Redis for queue mode (high availability)
-  redis:
-    image: redis:alpine
-    container_name: n8n-redis
-    restart: always
+  # Alertmanager - Alert Routing
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
     volumes:
-      - redis_data:/data
+      - ./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data:/alertmanager
     networks:
-      - n8n-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - monitoring
+
+  # Node Exporter - System Metrics
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    networks:
+      - monitoring
 
 volumes:
   n8n_data:
     driver: local
-  postgres_data:
+  prometheus_data:
     driver: local
-  redis_data:
+  alertmanager_data:
     driver: local
 
 networks:
-  n8n-network:
+  monitoring:
     driver: bridge
