@@ -1,0 +1,344 @@
+{
+  "name": "AI-Driven Incident Detection & Auto-Scaling",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "prometheus-alert",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Prometheus Alert Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "prometheus-alert"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse incoming Prometheus alert with enhanced error handling\nconst body = $input.item.json;\nconst alerts = body.alerts || [];\n\nif (alerts.length === 0) {\n  return {\n    error: true,\n    message: 'No alerts found in payload',\n    rawPayload: JSON.stringify(body)\n  };\n}\n\nconst alert = alerts[0];\nconst labels = alert.labels || {};\nconst annotations = alert.annotations || {};\n\n// Extract all relevant data\nconst alertData = {\n  alertName: labels.alertname || 'Unknown Alert',\n  instance: labels.instance || 'Unknown Instance',\n  severity: labels.severity || 'warning',\n  type: labels.type || 'general',\n  environment: labels.environment || 'production',\n  job: labels.job || 'unknown',\n  summary: annotations.summary || 'No summary provided',\n  description: annotations.description || 'No description provided',\n  metricValue: annotations.metric_value || 'N/A',\n  status: alert.status || 'firing',\n  startsAt: alert.startsAt || new Date().toISOString(),\n  endsAt: alert.endsAt || null,\n  generatorURL: alert.generatorURL || 'N/A',\n  fingerprint: alert.fingerprint || 'unknown',\n  error: false\n};\n\nreturn alertData;"
+      },
+      "id": "parse-alert",
+      "name": "Parse Alert Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build comprehensive AI prompt with context\nconst alert = $input.item.json;\n\nif (alert.error) {\n  return { skipAI: true, ...alert };\n}\n\n// Build detailed prompt for AI analysis\nconst prompt = `You are an expert DevOps AI agent analyzing production incidents. Your role is to provide actionable intelligence for infrastructure scaling decisions.\n\n=== ALERT DETAILS ===\nAlert Name: ${alert.alertName}\nInstance: ${alert.instance}\nEnvironment: ${alert.environment}\nSeverity: ${alert.severity}\nType: ${alert.type}\nMetric Value: ${alert.metricValue}\nStatus: ${alert.status}\n\nSummary: ${alert.summary}\nDescription: ${alert.description}\n\nTriggered At: ${alert.startsAt}\n\n=== ANALYSIS REQUIREMENTS ===\nAnalyze this incident and provide a structured assessment:\n\n1. **Spike Classification**: Is this a temporary spike or consistent load?\n   - Temporary: Short-lived burst, likely to resolve quickly\n   - Consistent: Sustained increase indicating growing demand\n\n2. **Trend Prediction**: What's the likely trajectory?\n   - Will the load increase, stabilize, or decrease?\n   - Time horizon for the prediction (next 15min, 1hr, 24hr)\n\n3. **Root Cause Hypothesis**: What might be causing this?\n   - Normal traffic growth\n   - Sudden traffic surge\n   - Resource leak or inefficiency\n   - External attack or abuse\n   - Application bug\n\n4. **Recommended Action**:\n   - auto-scale: Immediate scaling required\n   - manual: Requires human investigation\n   - no-action: Monitor only, no intervention needed\n\n5. **Confidence Level**: How confident are you? (0-100%)\n\n6. **Reasoning**: Brief technical explanation (2-3 sentences)\n\n=== RESPONSE FORMAT ===\nRespond ONLY with valid JSON (no markdown, no code blocks):\n\n{\n  \"spike_type\": \"temporary\" or \"consistent\",\n  \"trend\": \"detailed trend description\",\n  \"trend_horizon\": \"15min\" or \"1hr\" or \"24hr\",\n  \"root_cause\": \"hypothesis about cause\",\n  \"recommendation\": \"auto-scale\" or \"manual\" or \"no-action\",\n  \"confidence\": number between 0-100,\n  \"reasoning\": \"concise technical explanation\",\n  \"urgency\": \"low\" or \"medium\" or \"high\"\n}\n\n=== DECISION CRITERIA ===\n- CPU/Memory > 90% + consistent pattern = auto-scale\n- 5xx errors spiking = manual (investigate before scaling)\n- 4xx errors = manual (likely application/client issue)\n- Temporary spikes < 2min = no-action\n- Critical severity + consistent = auto-scale`;\n\nreturn {\n  ...alert,\n  aiPrompt: prompt,\n  skipAI: false\n};"
+      },
+      "id": "build-prompt",
+      "name": "Build AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=AIzaSyB9GJVGtWSDgAwXS6EVvOQ35ka2UqtlU_s",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": $json.aiPrompt\n    }]\n  }],\n  \"generationConfig\": {\n    \"temperature\": 0.3,\n    \"topK\": 40,\n    \"topP\": 0.95,\n    \"maxOutputTokens\": 1024\n  }\n} }}",
+        "options": {}
+      },
+      "id": "ai-analysis",
+      "name": "AI Analysis (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse AI response with robust error handling\nconst response = $input.item.json;\nconst previousData = $node['Build AI Prompt'].json;\n\nlet analysis = {\n  spike_type: 'unknown',\n  trend: 'Unable to analyze',\n  trend_horizon: 'unknown',\n  root_cause: 'Analysis failed',\n  recommendation: 'manual',\n  confidence: 50,\n  reasoning: 'AI response could not be parsed',\n  urgency: 'medium'\n};\n\ntry {\n  const aiText = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\n  \n  // Try to extract JSON from response\n  let jsonText = aiText;\n  \n  // Remove markdown code blocks if present\n  const codeBlockMatch = aiText.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (codeBlockMatch) {\n    jsonText = codeBlockMatch[1];\n  }\n  \n  // Try to find JSON object\n  const jsonMatch = jsonText.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    const parsed = JSON.parse(jsonMatch[0]);\n    analysis = {\n      spike_type: parsed.spike_type || analysis.spike_type,\n      trend: parsed.trend || analysis.trend,\n      trend_horizon: parsed.trend_horizon || analysis.trend_horizon,\n      root_cause: parsed.root_cause || analysis.root_cause,\n      recommendation: parsed.recommendation || analysis.recommendation,\n      confidence: parsed.confidence || analysis.confidence,\n      reasoning: parsed.reasoning || analysis.reasoning,\n      urgency: parsed.urgency || analysis.urgency\n    };\n  } else {\n    // Fallback: treat entire response as reasoning\n    analysis.reasoning = aiText.substring(0, 300);\n  }\n} catch (e) {\n  analysis.reasoning = `Parse error: ${e.message}`;\n}\n\n// Combine alert data with AI analysis\nreturn {\n  alertName: previousData.alertName,\n  instance: previousData.instance,\n  severity: previousData.severity,\n  type: previousData.type,\n  environment: previousData.environment,\n  summary: previousData.summary,\n  description: previousData.description,\n  metricValue: previousData.metricValue,\n  status: previousData.status,\n  startsAt: previousData.startsAt,\n  generatorURL: previousData.generatorURL,\n  ai_analysis: analysis,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "parse-ai",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build comprehensive Slack notification\nconst data = $input.item.json;\nconst ai = data.ai_analysis;\n\n// Determine emoji based on severity and urgency\nconst getSeverityEmoji = () => {\n  if (data.severity === 'critical') return '🚨';\n  if (data.severity === 'warning') return '⚠️';\n  return 'ℹ️';\n};\n\nconst getUrgencyColor = () => {\n  if (ai.urgency === 'high') return 'danger';\n  if (ai.urgency === 'medium') return 'warning';\n  return 'good';\n};\n\nconst getRecommendationEmoji = () => {\n  if (ai.recommendation === 'auto-scale') return '🚀';\n  if (ai.recommendation === 'manual') return '🔍';\n  return '✅';\n};\n\nreturn {\n  text: `${getSeverityEmoji()} *${data.alertName}* - ${data.severity.toUpperCase()}`,\n  blocks: [\n    {\n      type: 'header',\n      text: {\n        type: 'plain_text',\n        text: `${getSeverityEmoji()} ${data.alertName} Alert`,\n        emoji: true\n      }\n    },\n    {\n      type: 'section',\n      fields: [\n        {\n          type: 'mrkdwn',\n          text: `*Instance:*\\n${data.instance}`\n        },\n        {\n          type: 'mrkdwn',\n          text: `*Severity:*\\n${data.severity.toUpperCase()}`\n        },\n        {\n          type: 'mrkdwn',\n          text: `*Type:*\\n${data.type}`\n        },\n        {\n          type: 'mrkdwn',\n          text: `*Environment:*\\n${data.environment}`\n        },\n        {\n          type: 'mrkdwn',\n          text: `*Metric Value:*\\n${data.metricValue}`\n        },\n        {\n          type: 'mrkdwn',\n          text: `*Status:*\\n${data.status === 'firing' ? '🔥 FIRING' : '✅ RESOLVED'}`\n        }\n      ]\n    },\n    {\n      type: 'section',\n      text: {\n        type: 'mrkdwn',\n        text: `*Description:*\\n${data.description}`\n      }\n    },\n    {\n      type: 'divider'\n    },\n    {\n      type: 'section',\n      text: {\n        type: 'mrkdwn',\n        text: `*🤖 AI Analysis*\\n\\n*Spike Type:* ${ai.spike_type}\\n*Trend:* ${ai.trend} _(${ai.trend_horizon})_\\n*Root Cause:* ${ai.root_cause}\\n*Urgency:* ${ai.urgency.toUpperCase()}`\n      }\n    },\n    {\n      type: 'section',\n      text: {\n        type: 'mrkdwn',\n        text: `*${getRecommendationEmoji()} Recommendation:* ${ai.recommendation.toUpperCase()}\\n*Confidence:* ${ai.confidence}%\\n*Reasoning:* ${ai.reasoning}`\n      }\n    },\n    {\n      type: 'context',\n      elements: [\n        {\n          type: 'mrkdwn',\n          text: `⏰ ${new Date(data.startsAt).toLocaleString()} | 🔗 <${data.generatorURL}|View in Prometheus>`\n        }\n      ]\n    }\n  ],\n  attachments: [\n    {\n      color: getUrgencyColor(),\n      footer: 'AI-Driven Incident Detection System',\n      footer_icon: 'https://platform.slack-edge.com/img/default_application_icon.png',\n      ts: Math.floor(Date.now() / 1000)\n    }\n  ]\n};"
+      },
+      "id": "build-slack-message",
+      "name": "Build Slack Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://***REMOVED***T09AMR8A9C3/B0A1Y2SAZJT/JmTXlIpsfBQr0I139dyT8Qgd",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "slack-notification",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-autoscale",
+              "leftValue": "={{ $node['Parse AI Response'].json.ai_analysis.recommendation }}",
+              "rightValue": "auto-scale",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-scaling",
+      "name": "Should Auto-Scale?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://mock-server:3000/api/scale",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"action\": \"scale_up\",\n  \"alert_type\": $node['Parse AI Response'].json.alertName,\n  \"instance\": $node['Parse AI Response'].json.instance,\n  \"environment\": $node['Parse AI Response'].json.environment,\n  \"severity\": $node['Parse AI Response'].json.severity,\n  \"metric_value\": $node['Parse AI Response'].json.metricValue,\n  \"ai_confidence\": $node['Parse AI Response'].json.ai_analysis.confidence,\n  \"ai_reasoning\": $node['Parse AI Response'].json.ai_analysis.reasoning,\n  \"timestamp\": $node['Parse AI Response'].json.timestamp\n} }}",
+        "options": {\n          \"response\": {\n            \"response\": {\n              \"neverError\": true\n            }\n          }\n        }
+      },
+      "id": "trigger-scaling",
+      "name": "Trigger Auto-Scaling",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build scaling success message\nconst data = $node['Parse AI Response'].json;\nconst ai = data.ai_analysis;\n\nreturn {\n  text: `✅ Auto-scaling triggered for ${data.alertName}`,\n  blocks: [\n    {\n      type: 'header',\n      text: {\n        type: 'plain_text',\n        text: '🚀 Auto-Scaling Initiated',\n        emoji: true\n      }\n    },\n    {\n      type: 'section',\n      fields: [\n        {\n          type: 'mrkdwn',\n          text: `*Alert:*\\n${data.alertName}`\n        },\n        {\n          type: 'mrkdwn',\n          text: `*Instance:*\\n${data.instance}`\n        },\n        {\n          type: 'mrkdwn',\n          text: `*Environment:*\\n${data.environment}`\n        },\n        {\n          type: 'mrkdwn',\n          text: `*Action:*\\nScale Up`\n        }\n      ]\n    },\n    {\n      type: 'section',\n      text: {\n        type: 'mrkdwn',\n        text: `*AI Decision Factors:*\\n• Spike Type: ${ai.spike_type}\\n• Trend: ${ai.trend}\\n• Root Cause: ${ai.root_cause}\\n• Confidence: ${ai.confidence}%\\n• Reasoning: ${ai.reasoning}`\n      }\n    },\n    {\n      type: 'context',\n      elements: [\n        {\n          type: 'mrkdwn',\n          text: `⏰ Scaling triggered at ${new Date().toLocaleString()}`\n        }\n      ]\n    }\n  ],\n  attachments: [\n    {\n      color: 'good',\n      footer: 'Auto-Scaling System',\n      ts: Math.floor(Date.now() / 1000)\n    }\n  ]\n};"
+      },
+      "id": "build-scaling-message",
+      "name": "Build Scaling Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2050, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://***REMOVED***T09AMR8A9C3/B0A1Y2SAZJT/JmTXlIpsfBQr0I139dyT8Qgd",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "slack-scaling",
+      "name": "Send Scaling to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2250, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build no-action message\nconst data = $node['Parse AI Response'].json;\nconst ai = data.ai_analysis;\n\nconst getReasonIcon = () => {\n  if (ai.recommendation === 'manual') return '🔍';\n  return 'ℹ️';\n};\n\nreturn {\n  text: `${getReasonIcon()} ${ai.recommendation === 'manual' ? 'Manual investigation required' : 'No action needed'} for ${data.alertName}`,\n  blocks: [\n    {\n      type: 'header',\n      text: {\n        type: 'plain_text',\n        text: `${getReasonIcon()} ${ai.recommendation === 'manual' ? 'Manual Investigation Required' : 'No Auto-Scaling Needed'}`,\n        emoji: true\n      }\n    },\n    {\n      type: 'section',\n      fields: [\n        {\n          type: 'mrkdwn',\n          text: `*Alert:*\\n${data.alertName}`\n        },\n        {\n          type: 'mrkdwn',\n          text: `*Instance:*\\n${data.instance}`\n        },\n        {\n          type: 'mrkdwn',\n          text: `*Recommendation:*\\n${ai.recommendation.toUpperCase()}`\n        },\n        {\n          type: 'mrkdwn',\n          text: `*Confidence:*\\n${ai.confidence}%`\n        }\n      ]\n    },\n    {\n      type: 'section',\n      text: {\n        type: 'mrkdwn',\n        text: `*Analysis:*\\n• Spike Type: ${ai.spike_type}\\n• Trend: ${ai.trend}\\n• Root Cause: ${ai.root_cause}\\n• Reasoning: ${ai.reasoning}`\n      }\n    },\n    {\n      type: 'context',\n      elements: [\n        {\n          type: 'mrkdwn',\n          text: ai.recommendation === 'manual' ? '⚠️ DevOps team should investigate this incident' : '✅ System is monitoring the situation'\n        }\n      ]\n    }\n  ],\n  attachments: [\n    {\n      color: ai.recommendation === 'manual' ? 'warning' : 'good',\n      footer: 'AI-Driven Incident Detection System',\n      ts: Math.floor(Date.now() / 1000)\n    }\n  ]\n};"
+      },
+      "id": "build-no-action",
+      "name": "Build No Action Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1850, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://***REMOVED***T09AMR8A9C3/B0A1Y2SAZJT/JmTXlIpsfBQr0I139dyT8Qgd",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "slack-no-action",
+      "name": "Send No Action to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2050, 400]
+    }
+  ],
+  "connections": {
+    "Prometheus Alert Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Alert Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Alert Data": {
+      "main": [
+        [
+          {
+            "node": "Build AI Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Prompt": {
+      "main": [
+        [
+          {
+            "node": "AI Analysis (Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Analysis (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Build Slack Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Slack Message": {
+      "main": [
+        [
+          {
+            "node": "Send to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Slack": {
+      "main": [
+        [
+          {
+            "node": "Should Auto-Scale?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Auto-Scale?": {
+      "main": [
+        [
+          {
+            "node": "Trigger Auto-Scaling",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build No Action Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Auto-Scaling": {
+      "main": [
+        [
+          {
+            "node": "Build Scaling Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Scaling Message": {
+      "main": [
+        [
+          {
+            "node": "Send Scaling to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build No Action Message": {
+      "main": [
+        [
+          {
+            "node": "Send No Action to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-12-10T00:00:00.000Z",
+  "versionId": "2.0"
+}
