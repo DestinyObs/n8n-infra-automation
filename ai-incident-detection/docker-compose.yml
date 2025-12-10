@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   # n8n Automation Platform
   n8n:
@@ -27,8 +29,9 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      - ./prometheus/alertmanager.yml:/etc/prometheus/alertmanager.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -37,6 +40,8 @@ services:
       - '--web.console.templates=/usr/share/prometheus/consoles'
     networks:
       - incident-detection-network
+    depends_on:
+      - alertmanager
 
   # Alertmanager - Alert Management
   alertmanager:

@@ -1,0 +1,114 @@
+groups:
+  - name: system_alerts
+    interval: 15s
+    rules:
+      # High CPU Usage Alert
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100) > 80
+        for: 1m
+        labels:
+          severity: warning
+          type: cpu
+        annotations:
+          summary: "High CPU usage detected on {{ $labels.instance }}"
+          description: "CPU usage is above 80% (current value: {{ $value | humanize }}%)"
+          metric_value: "{{ $value | humanize }}%"
+
+      # Critical CPU Usage Alert
+      - alert: CriticalCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100) > 90
+        for: 30s
+        labels:
+          severity: critical
+          type: cpu
+        annotations:
+          summary: "CRITICAL: CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is above 90% (current value: {{ $value | humanize }}%)"
+          metric_value: "{{ $value | humanize }}%"
+
+      # High Memory Usage Alert
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 2m
+        labels:
+          severity: warning
+          type: memory
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is above 85% (current value: {{ $value | humanize }}%)"
+          metric_value: "{{ $value | humanize }}%"
+
+      # Critical Memory Usage Alert
+      - alert: CriticalMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
+        for: 1m
+        labels:
+          severity: critical
+          type: memory
+        annotations:
+          summary: "CRITICAL: Memory usage on {{ $labels.instance }}"
+          description: "Memory usage is above 95% (current value: {{ $value | humanize }}%)"
+          metric_value: "{{ $value | humanize }}%"
+
+      # High Disk Usage Alert
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          type: disk
+        annotations:
+          summary: "High disk usage on {{ $labels.instance }}"
+          description: "Disk usage is above 80% (current value: {{ $value | humanize }}%)"
+          metric_value: "{{ $value | humanize }}%"
+
+      # Node Down Alert
+      - alert: NodeDown
+        expr: up{job="node-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          type: availability
+        annotations:
+          summary: "Node {{ $labels.instance }} is down"
+          description: "Node exporter has been down for more than 1 minute"
+          metric_value: "DOWN"
+
+  - name: application_alerts
+    interval: 15s
+    rules:
+      # High 5xx Error Rate
+      - alert: High5xxErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          type: http_5xx
+        annotations:
+          summary: "High 5xx error rate on {{ $labels.instance }}"
+          description: "5xx error rate is above 5% (current value: {{ $value | humanizePercentage }})"
+          metric_value: "{{ $value | humanizePercentage }}"
+
+      # High 4xx Error Rate
+      - alert: High4xxErrorRate
+        expr: rate(http_requests_total{status=~"4.."}[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          type: http_4xx
+        annotations:
+          summary: "High 4xx error rate on {{ $labels.instance }}"
+          description: "4xx error rate is above 10% (current value: {{ $value | humanizePercentage }})"
+          metric_value: "{{ $value | humanizePercentage }}"
+
+      # Response Time Alert
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 3m
+        labels:
+          severity: warning
+          type: latency
+        annotations:
+          summary: "High response time on {{ $labels.instance }}"
+          description: "95th percentile response time is above 2s (current value: {{ $value }}s)"
+          metric_value: "{{ $value }}s"
