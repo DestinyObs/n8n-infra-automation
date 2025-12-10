@@ -3,6 +3,8 @@
 .env.production
 .env
 
+ai-incident-detection.json
+
 # Docker volumes
 n8n_data/
 prometheus_data/
