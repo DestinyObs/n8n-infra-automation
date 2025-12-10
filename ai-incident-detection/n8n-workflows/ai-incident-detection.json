@@ -142,7 +142,13 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ {\n  \"action\": \"scale_up\",\n  \"alert_type\": $node['Parse AI Response'].json.alertName,\n  \"instance\": $node['Parse AI Response'].json.instance,\n  \"environment\": $node['Parse AI Response'].json.environment,\n  \"severity\": $node['Parse AI Response'].json.severity,\n  \"metric_value\": $node['Parse AI Response'].json.metricValue,\n  \"ai_confidence\": $node['Parse AI Response'].json.ai_analysis.confidence,\n  \"ai_reasoning\": $node['Parse AI Response'].json.ai_analysis.reasoning,\n  \"timestamp\": $node['Parse AI Response'].json.timestamp\n} }}",
-        "options": {\n          \"response\": {\n            \"response\": {\n              \"neverError\": true\n            }\n          }\n        }
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
       },
       "id": "trigger-scaling",
       "name": "Trigger Auto-Scaling",
