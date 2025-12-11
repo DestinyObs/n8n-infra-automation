@@ -49,22 +49,34 @@ monitor_alerts() {
     
     echo -e "\n${CYAN}Monitoring for alerts (${duration}s)...${NC}\n"
     
+    declare -A seen_alerts
+    local all_alerts=()
     while [ $elapsed -lt $duration ]; do
         sleep $check_interval
         elapsed=$((elapsed + check_interval))
-        
         # Check Prometheus alerts
         alerts=$(curl -s http://13.60.207.36:9090/api/v1/alerts 2>/dev/null | \
              jq -r '.data.alerts[] | select(.state == "firing") | "\(.labels.alertname) (\(.labels.severity))"' 2>/dev/null)
-        
         if [ ! -z "$alerts" ]; then
-            echo -e "${RED}🚨 ALERTS FIRING:${NC}"
-            echo "$alerts"
-            echo ""
+            while IFS= read -r alert; do
+                if [ -n "$alert" ] && [ -z "${seen_alerts[$alert]}" ]; then
+                    echo -e "${RED}🚨 ALERT FIRING: $alert${NC}"
+                    seen_alerts[$alert]=1
+                    all_alerts+=("$alert")
+                fi
+            done <<< "$alerts"
         else
             echo -e "${YELLOW}⏳ Waiting for alerts... (${elapsed}/${duration}s)${NC}"
         fi
     done
+    if [ ${#all_alerts[@]} -gt 0 ]; then
+        echo -e "\n${CYAN}Summary of unique alerts fired:${NC}"
+        for alert in "${all_alerts[@]}"; do
+            echo "  - $alert"
+        done
+    else
+        echo -e "\n${GREEN}No alerts fired during test.${NC}"
+    fi
 }
 
 # Menu
