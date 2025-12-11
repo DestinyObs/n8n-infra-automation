@@ -1,62 +1,67 @@
 groups:
   - name: system_alerts
-    interval: 15s
+    interval: 10s  # Evaluate every 10 seconds for faster detection
     rules:
-      # High CPU Usage Alert
+      # High CPU Usage Alert - TUNED FOR TESTING
       - alert: HighCPUUsage
-        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100) > 80
-        for: 1m
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100) > 70
+        for: 30s  # Quick trigger for testing
         labels:
           severity: warning
           type: cpu
+          environment: production
         annotations:
           summary: "High CPU usage detected on {{ $labels.instance }}"
-          description: "CPU usage is above 80% (current value: {{ $value | humanize }}%)"
+          description: "CPU usage is above 70% (current value: {{ $value | humanize }}%)"
           metric_value: "{{ $value | humanize }}%"
 
-      # Critical CPU Usage Alert
+      # Critical CPU Usage Alert - TUNED FOR TESTING
       - alert: CriticalCPUUsage
-        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100) > 90
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100) > 85
+        for: 20s  # Very quick trigger for critical
+        labels:
+          severity: critical
+          type: cpu
+          environment: production
+        annotations:
+          summary: "CRITICAL: CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is above 85% (current value: {{ $value | humanize }}%)"
+          metric_value: "{{ $value | humanize }}%"
+
+      # High Memory Usage Alert - TUNED FOR TESTING
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 75
+        for: 1m
+        labels:
+          severity: warning
+          type: memory
+          environment: production
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is above 75% (current value: {{ $value | humanize }}%)"
+          metric_value: "{{ $value | humanize }}%"
+
+      # Critical Memory Usage Alert - TUNED FOR TESTING
+      - alert: CriticalMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
         for: 30s
         labels:
           severity: critical
-          type: cpu
-        annotations:
-          summary: "CRITICAL: CPU usage on {{ $labels.instance }}"
-          description: "CPU usage is above 90% (current value: {{ $value | humanize }}%)"
-          metric_value: "{{ $value | humanize }}%"
-
-      # High Memory Usage Alert
-      - alert: HighMemoryUsage
-        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
-        for: 2m
-        labels:
-          severity: warning
           type: memory
-        annotations:
-          summary: "High memory usage on {{ $labels.instance }}"
-          description: "Memory usage is above 85% (current value: {{ $value | humanize }}%)"
-          metric_value: "{{ $value | humanize }}%"
-
-      # Critical Memory Usage Alert
-      - alert: CriticalMemoryUsage
-        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
-        for: 1m
-        labels:
-          severity: critical
-          type: memory
+          environment: production
         annotations:
           summary: "CRITICAL: Memory usage on {{ $labels.instance }}"
-          description: "Memory usage is above 95% (current value: {{ $value | humanize }}%)"
+          description: "Memory usage is above 90% (current value: {{ $value | humanize }}%)"
           metric_value: "{{ $value | humanize }}%"
 
       # High Disk Usage Alert
       - alert: HighDiskUsage
         expr: (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100 > 80
-        for: 5m
+        for: 2m
         labels:
           severity: warning
           type: disk
+          environment: production
         annotations:
           summary: "High disk usage on {{ $labels.instance }}"
           description: "Disk usage is above 80% (current value: {{ $value | humanize }}%)"
@@ -65,50 +70,103 @@ groups:
       # Node Down Alert
       - alert: NodeDown
         expr: up{job="node-exporter"} == 0
-        for: 1m
+        for: 30s
         labels:
           severity: critical
           type: availability
+          environment: production
         annotations:
           summary: "Node {{ $labels.instance }} is down"
-          description: "Node exporter has been down for more than 1 minute"
+          description: "Node exporter has been down for more than 30 seconds"
           metric_value: "DOWN"
 
   - name: application_alerts
-    interval: 15s
+    interval: 10s  # Evaluate every 10 seconds
     rules:
-      # High 5xx Error Rate
+      # High 5xx Error Rate - TUNED FOR TESTING
+      # AI should recommend MANUAL investigation (not auto-scale)
       - alert: High5xxErrorRate
-        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
-        for: 2m
+        expr: rate(http_requests_total{status=~"5.."}[2m]) > 0.05
+        for: 30s
         labels:
           severity: critical
           type: http_5xx
+          environment: production
         annotations:
           summary: "High 5xx error rate on {{ $labels.instance }}"
           description: "5xx error rate is above 5% (current value: {{ $value | humanizePercentage }})"
           metric_value: "{{ $value | humanizePercentage }}"
 
-      # High 4xx Error Rate
+      # High 4xx Error Rate - TUNED FOR TESTING
+      # AI should recommend MANUAL investigation (client/app issue)
       - alert: High4xxErrorRate
-        expr: rate(http_requests_total{status=~"4.."}[5m]) > 0.1
-        for: 3m
+        expr: rate(http_requests_total{status=~"4.."}[2m]) > 0.10
+        for: 1m
         labels:
           severity: warning
           type: http_4xx
+          environment: production
         annotations:
           summary: "High 4xx error rate on {{ $labels.instance }}"
           description: "4xx error rate is above 10% (current value: {{ $value | humanizePercentage }})"
           metric_value: "{{ $value | humanizePercentage }}"
 
-      # Response Time Alert
+      # Response Time Alert - TUNED FOR TESTING
+      # AI might recommend auto-scale if sustained
       - alert: HighResponseTime
-        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
-        for: 3m
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[2m])) > 2
+        for: 1m
         labels:
           severity: warning
           type: latency
+          environment: production
         annotations:
           summary: "High response time on {{ $labels.instance }}"
           description: "95th percentile response time is above 2s (current value: {{ $value }}s)"
           metric_value: "{{ $value }}s"
+
+      # Very High Response Time - TUNED FOR TESTING
+      # AI should recommend auto-scale
+      - alert: CriticalResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[2m])) > 4
+        for: 30s
+        labels:
+          severity: critical
+          type: latency
+          environment: production
+        annotations:
+          summary: "CRITICAL: Response time on {{ $labels.instance }}"
+          description: "95th percentile response time is above 4s (current value: {{ $value }}s)"
+          metric_value: "{{ $value }}s"
+
+  # TESTING-SPECIFIC ALERTS (Optional - for advanced scenarios)
+  - name: testing_alerts
+    interval: 10s
+    rules:
+      # Sustained High CPU - Should trigger AUTO-SCALE
+      - alert: SustainedHighCPU
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 2m  # Sustained for 2 minutes = auto-scale
+        labels:
+          severity: warning
+          type: cpu
+          pattern: sustained
+          environment: production
+        annotations:
+          summary: "Sustained high CPU on {{ $labels.instance }}"
+          description: "CPU has been above 80% for 2 minutes (current value: {{ $value | humanize }}%)"
+          metric_value: "{{ $value | humanize }}%"
+
+      # Spike CPU - Might trigger NO-ACTION
+      - alert: SpikyCPU
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[30s])) * 100) > 85
+        for: 10s  # Very short spike = might not need action
+        labels:
+          severity: info
+          type: cpu
+          pattern: spike
+          environment: production
+        annotations:
+          summary: "CPU spike detected on {{ $labels.instance }}"
+          description: "Short CPU spike above 85% (current value: {{ $value | humanize }}%)"
+          metric_value: "{{ $value | humanize }}%"

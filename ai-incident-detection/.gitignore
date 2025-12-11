@@ -4,6 +4,8 @@
 .env
 
 ai-incident-detection.json
+workflow-gemini-complete.json
+workflow-ollama-complete.json
 
 # Docker volumes
 n8n_data/
