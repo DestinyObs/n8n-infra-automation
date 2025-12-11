@@ -54,8 +54,8 @@ monitor_alerts() {
         elapsed=$((elapsed + check_interval))
         
         # Check Prometheus alerts
-        alerts=$(curl -s http://localhost:9090/api/v1/alerts 2>/dev/null | \
-                 jq -r '.data.alerts[] | select(.state == "firing") | "\(.labels.alertname) (\(.labels.severity))"' 2>/dev/null)
+        alerts=$(curl -s http://13.60.207.36:9090/api/v1/alerts 2>/dev/null | \
+             jq -r '.data.alerts[] | select(.state == "firing") | "\(.labels.alertname) (\(.labels.severity))"' 2>/dev/null)
         
         if [ ! -z "$alerts" ]; then
             echo -e "${RED}🚨 ALERTS FIRING:${NC}"
@@ -339,7 +339,7 @@ check_alerts() {
     echo -e "${BLUE}  Active Prometheus Alerts${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
     
-    alerts=$(curl -s http://localhost:9090/api/v1/alerts 2>/dev/null)
+    alerts=$(curl -s http://13.60.207.36:9090/api/v1/alerts 2>/dev/null)
     
     if [ $? -eq 0 ]; then
         firing=$(echo "$alerts" | jq -r '.data.alerts[] | select(.state == "firing")')
@@ -364,27 +364,16 @@ test_prometheus() {
     echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}  Testing Prometheus Connection${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
-    
-    echo -n "Testing Prometheus API... "
-    if curl -s -f http://localhost:9090/-/healthy > /dev/null 2>&1; then
-        echo -e "${GREEN}✓ Connected${NC}"
-        
-        echo -e "\n${YELLOW}Current CPU usage:${NC}"
-        CPU=$(curl -s 'http://localhost:9090/api/v1/query?query=100-(avg(rate(node_cpu_seconds_total{mode="idle"}[1m]))*100)' 2>/dev/null | \
-              jq -r '.data.result[0].value[1]' 2>/dev/null)
-        
-        if [ ! -z "$CPU" ] && [ "$CPU" != "null" ]; then
-            echo "  ${CPU}%"
-        else
-            echo -e "  ${YELLOW}No CPU data available (node-exporter may not be running)${NC}"
-        fi
-        
+
+    echo -n "Checking Prometheus container status... "
+    if docker compose ps | grep -q prometheus; then
+        echo -e "${GREEN}✓ Prometheus container is running${NC}"
+        echo -e "\n${YELLOW}Current CPU usage (from container):${NC}"
+        docker compose exec prometheus curl -s 'http://localhost:9090/api/v1/query?query=100-(avg(rate(node_cpu_seconds_total{mode="idle"}[1m]))*100)' | jq -r '.data.result[0].value[1]' 2>/dev/null
         echo -e "\n${YELLOW}Active targets:${NC}"
-        curl -s http://localhost:9090/api/v1/targets 2>/dev/null | \
-            jq -r '.data.activeTargets[] | "  \(.job): \(.health)"'
-        
+        docker compose exec prometheus curl -s http://localhost:9090/api/v1/targets | jq -r '.data.activeTargets[] | "  \(.job): \(.health)"'
     else
-        echo -e "${RED}✗ Failed${NC}"
+        echo -e "${RED}✗ Prometheus container is NOT running${NC}"
         echo -e "\n${YELLOW}Troubleshooting:${NC}"
         echo "1. Check if services are running:"
         echo "   docker-compose ps"
@@ -395,7 +384,6 @@ test_prometheus() {
         echo "3. Restart services:"
         echo "   docker-compose restart"
     fi
-    
     echo ""
 }
 
