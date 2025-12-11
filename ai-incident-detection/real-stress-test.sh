@@ -1,8 +1,7 @@
 #!/bin/bash
 
-# REAL INFRASTRUCTURE STRESS TESTS
-# These test actual system resources monitored by Prometheus node-exporter
-# NOT mock server simulations
+# REAL INFRASTRUCTURE STRESS TESTS - FIXED VERSION
+# Issue: Previous version had wrong worker calculation
 
 set -e
 
@@ -15,8 +14,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 echo -e "${BLUE}╔═══════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║   REAL INFRASTRUCTURE STRESS TESTS                                ║${NC}"
-echo -e "${BLUE}║   Tests actual CPU, Memory, Disk, and Network                     ║${NC}"
+echo -e "${BLUE}║   REAL INFRASTRUCTURE STRESS TESTS - FIXED                        ║${NC}"
 echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════════╝${NC}\n"
 
 # Check prerequisites
@@ -37,6 +35,10 @@ echo -e "${YELLOW}Checking required tools...${NC}\n"
 check_tool "stress-ng" "sudo apt-get update -qq && sudo apt-get install -y stress-ng"
 check_tool "apache2-utils" "sudo apt-get install -y apache2-utils"
 
+# Get number of cores
+CORES=$(nproc)
+echo -e "\n${CYAN}System Info:${NC}"
+echo "  CPU Cores: $CORES"
 echo ""
 
 # Helper function to monitor alerts
@@ -79,11 +81,12 @@ show_menu() {
     echo "7. Combined Stress (CPU + Memory) - Multi-resource pressure"
     echo "8. Check Current System Resources"
     echo "9. Check Active Prometheus Alerts"
+    echo "10. Test Prometheus Connection"
     echo "0. Exit"
     echo ""
 }
 
-# Test 1: Real CPU Stress (70-85%)
+# Test 1: Real CPU Stress (70-85%) - FIXED
 test_cpu_moderate() {
     echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}  TEST 1: Real CPU Stress (70-85%)${NC}"
@@ -91,6 +94,7 @@ test_cpu_moderate() {
     
     echo -e "${YELLOW}This will:${NC}"
     echo "  • Stress CPU to ~75% for 120 seconds"
+    echo "  • Use $CORES CPU workers at 75% each"
     echo "  • Prometheus will detect via node-exporter"
     echo "  • Alert should fire after 30-40 seconds"
     echo "  • AI should recommend: VARIABLE (auto-scale or manual)"
@@ -99,14 +103,10 @@ test_cpu_moderate() {
     read -p "Continue? (y/n): " confirm
     [ "$confirm" != "y" ] && return
     
-    CORES=$(nproc)
-    # Use 75% of cores to reach ~75% CPU
-    WORKERS=$((CORES * 3 / 4))
-    [ $WORKERS -lt 1 ] && WORKERS=1
+    echo -e "\n${GREEN}Starting CPU stress: $CORES workers at 75% load for 120s${NC}\n"
     
-    echo -e "\n${GREEN}Starting CPU stress: $WORKERS workers for 120s${NC}\n"
-    
-    stress-ng --cpu $WORKERS --timeout 120s --metrics-brief &
+    # FIXED: Use all cores with 75% load instead of fraction of cores
+    stress-ng --cpu $CORES --cpu-load 75 --timeout 120s --metrics-brief &
     STRESS_PID=$!
     
     monitor_alerts 120
@@ -117,14 +117,14 @@ test_cpu_moderate() {
     echo -e "${CYAN}Check: Slack notifications, n8n executions${NC}\n"
 }
 
-# Test 2: Real Critical CPU (90%+)
+# Test 2: Real Critical CPU (90%+) - FIXED
 test_cpu_critical() {
     echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}  TEST 2: Real Critical CPU (90%+)${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
     
     echo -e "${YELLOW}This will:${NC}"
-    echo "  • Stress CPU to 95%+ for 120 seconds"
+    echo "  • Stress ALL $CORES cores to 95% for 120 seconds"
     echo "  • Alert should fire after 20-30 seconds"
     echo "  • AI should recommend: AUTO-SCALE (high confidence)"
     echo ""
@@ -132,10 +132,9 @@ test_cpu_critical() {
     read -p "Continue? (y/n): " confirm
     [ "$confirm" != "y" ] && return
     
-    CORES=$(nproc)
+    echo -e "\n${GREEN}Starting CRITICAL CPU stress: $CORES workers at 95% load for 120s${NC}\n"
     
-    echo -e "\n${GREEN}Starting CRITICAL CPU stress: $CORES workers for 120s${NC}\n"
-    
+    # Use all cores at 95% load
     stress-ng --cpu $CORES --cpu-load 95 --timeout 120s --metrics-brief &
     STRESS_PID=$!
     
@@ -147,7 +146,7 @@ test_cpu_critical() {
     echo -e "${CYAN}Check: Slack should show AUTO-SCALE recommendation${NC}\n"
 }
 
-# Test 3: Real Memory Stress
+# Test 3: Real Memory Stress - FIXED
 test_memory() {
     echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}  TEST 3: Real Memory Stress${NC}"
@@ -155,10 +154,10 @@ test_memory() {
     
     # Get total memory
     TOTAL_MEM=$(free -m | awk '/^Mem:/{print $2}')
-    TARGET_MEM=$((TOTAL_MEM * 75 / 100))
+    TARGET_MEM=$((TOTAL_MEM * 78 / 100))  # 78% to ensure we exceed 75% threshold
     
     echo -e "${YELLOW}This will:${NC}"
-    echo "  • Allocate ${TARGET_MEM}MB (~75% of ${TOTAL_MEM}MB total)"
+    echo "  • Allocate ${TARGET_MEM}MB (~78% of ${TOTAL_MEM}MB total)"
     echo "  • Hold memory for 120 seconds"
     echo "  • Alert should fire after 60 seconds"
     echo "  • AI should recommend: VARIABLE"
@@ -226,12 +225,12 @@ test_http_5xx() {
     echo -e "\n${GREEN}Triggering 5xx error rate...${NC}"
     curl -s -X POST http://localhost:3000/api/simulate/errors \
         -H "Content-Type: application/json" \
-        -d '{"rate": 0.15, "duration": 120000}' | jq '.'
+        -d '{"rate": 0.15, "duration": 120000}' | jq '.' || echo "Mock server not responding"
     
     echo -e "\n${GREEN}Generating HTTP traffic with Apache Bench...${NC}\n"
     
     # Generate continuous traffic
-    ab -n 5000 -c 10 http://localhost:3000/api/test &
+    ab -n 5000 -c 10 http://localhost:3000/api/test > /dev/null 2>&1 &
     AB_PID=$!
     
     monitor_alerts 120
@@ -262,12 +261,12 @@ test_http_latency() {
     echo -e "\n${GREEN}Triggering high latency...${NC}"
     curl -s -X POST http://localhost:3000/api/simulate/latency \
         -H "Content-Type: application/json" \
-        -d '{"delayMs": 3500, "duration": 120000}' | jq '.'
+        -d '{"delayMs": 3500, "duration": 120000}' | jq '.' || echo "Mock server not responding"
     
     echo -e "\n${GREEN}Generating HTTP traffic...${NC}\n"
     
     # Generate traffic
-    ab -n 1000 -c 5 http://localhost:3000/api/test &
+    ab -n 1000 -c 5 http://localhost:3000/api/test > /dev/null 2>&1 &
     AB_PID=$!
     
     monitor_alerts 120
@@ -278,19 +277,18 @@ test_http_latency() {
     echo -e "${CYAN}Check: Slack should recommend AUTO-SCALE${NC}\n"
 }
 
-# Test 7: Combined Stress (CPU + Memory)
+# Test 7: Combined Stress (CPU + Memory) - FIXED
 test_combined() {
     echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}  TEST 7: Combined Stress (CPU + Memory)${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
     
-    CORES=$(nproc)
     TOTAL_MEM=$(free -m | awk '/^Mem:/{print $2}')
-    TARGET_MEM=$((TOTAL_MEM * 60 / 100))
+    TARGET_MEM=$((TOTAL_MEM * 65 / 100))  # 65% memory
     
     echo -e "${YELLOW}This will:${NC}"
-    echo "  • Stress CPU: $CORES cores at 85%"
-    echo "  • Stress Memory: ${TARGET_MEM}MB (~60% of total)"
+    echo "  • Stress CPU: $CORES cores at 88%"
+    echo "  • Stress Memory: ${TARGET_MEM}MB (~65% of total)"
     echo "  • Duration: 120 seconds"
     echo "  • Multiple alerts should fire"
     echo "  • AI should recommend: AUTO-SCALE (high confidence)"
@@ -301,7 +299,7 @@ test_combined() {
     
     echo -e "\n${GREEN}Starting combined stress test for 120s${NC}\n"
     
-    stress-ng --cpu $CORES --cpu-load 85 \
+    stress-ng --cpu $CORES --cpu-load 88 \
               --vm 1 --vm-bytes ${TARGET_MEM}M \
               --timeout 120s --metrics-brief &
     STRESS_PID=$!
@@ -321,7 +319,7 @@ check_resources() {
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
     
     echo -e "${YELLOW}CPU:${NC}"
-    mpstat 1 1 | tail -n 1 || top -bn1 | grep "Cpu(s)" | head -n 1
+    mpstat 1 1 2>/dev/null | tail -n 1 || top -bn1 | grep "Cpu(s)" | head -n 1
     
     echo -e "\n${YELLOW}Memory:${NC}"
     free -h
@@ -353,7 +351,49 @@ check_alerts() {
                 "Alert: \(.labels.alertname)\nSeverity: \(.labels.severity)\nValue: \(.annotations.metric_value)\n---"'
         fi
     else
-        echo -e "${RED}Cannot connect to Prometheus${NC}"
+        echo -e "${RED}Cannot connect to Prometheus at http://localhost:9090${NC}"
+        echo -e "${YELLOW}Make sure Docker services are running:${NC}"
+        echo "  docker-compose ps"
+    fi
+    
+    echo ""
+}
+
+# Test Prometheus connection
+test_prometheus() {
+    echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}  Testing Prometheus Connection${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+    
+    echo -n "Testing Prometheus API... "
+    if curl -s -f http://localhost:9090/-/healthy > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Connected${NC}"
+        
+        echo -e "\n${YELLOW}Current CPU usage:${NC}"
+        CPU=$(curl -s 'http://localhost:9090/api/v1/query?query=100-(avg(rate(node_cpu_seconds_total{mode="idle"}[1m]))*100)' 2>/dev/null | \
+              jq -r '.data.result[0].value[1]' 2>/dev/null)
+        
+        if [ ! -z "$CPU" ] && [ "$CPU" != "null" ]; then
+            echo "  ${CPU}%"
+        else
+            echo -e "  ${YELLOW}No CPU data available (node-exporter may not be running)${NC}"
+        fi
+        
+        echo -e "\n${YELLOW}Active targets:${NC}"
+        curl -s http://localhost:9090/api/v1/targets 2>/dev/null | \
+            jq -r '.data.activeTargets[] | "  \(.job): \(.health)"'
+        
+    else
+        echo -e "${RED}✗ Failed${NC}"
+        echo -e "\n${YELLOW}Troubleshooting:${NC}"
+        echo "1. Check if services are running:"
+        echo "   docker-compose ps"
+        echo ""
+        echo "2. Check Prometheus logs:"
+        echo "   docker-compose logs prometheus"
+        echo ""
+        echo "3. Restart services:"
+        echo "   docker-compose restart"
     fi
     
     echo ""
@@ -374,6 +414,7 @@ while true; do
         7) test_combined ;;
         8) check_resources ;;
         9) check_alerts ;;
+        10) test_prometheus ;;
         0) 
             echo -e "\n${GREEN}Goodbye!${NC}\n"
             exit 0
